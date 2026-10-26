@@ -1,0 +1,99 @@
+import os
+from groq import Groq
+
+# Your 17 Subjects
+SUBJECTS = ["Shona","English","Maths","Agriculture","Computer science","Combined science","Heritage","Economics","Accounts","Business Studies","Chemistry","Physics","Biology","Sociology","History","English literature","Geography"]
+
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+def generate_project_prompt(user_data, problem_idea=None):
+    grade_form = user_data.get('grade')
+    subject = user_data.get('subject')
+    name = user_data.get('name')
+    school = user_data.get('school')
+    cand_no = user_data.get('candidate_no')
+    centre_no = user_data.get('centre_no')
+    
+    # Determine Level
+    level = "Advanced Level" if grade_form in ["5","6","Form 5","Form 6"] else "Ordinary Level"
+    if grade_form in ["6","7","Grade 6","Grade 7"]: level = "Grade Level"
+
+    system_prompt = f"""
+You are DR SMOKE Solutions - ZIMSEC Project Generator by Kelvin Bvunzawabaya.
+
+STRICT RULES:
+- Adhere to Circular 9 of 2024: Simple product/service, NOT research project. No literature review/methodology. No causes/effects forced.
+- Marked Stage by Stage. Produce well detailed explanation each stage.
+- Grades: {grade_form}. Subject: {subject}. Topics must match ZIMSEC syllabus for that grade/form/subject. Check syllabus.
+- Easy solutions: campaigns, posters, bins, recycled materials, awareness.
+- Syllabus-aware: Form 4 Biology != Grade 7 Agriculture.
+- Produce 2 VERSIONS: VERSION A = Simple & Easy (cheap, local materials). VERSION B = Way Beyond / Advanced (innovative).
+
+COVER PAGE FORMAT:
+PROJECT DETAILS
+SUBJECT: {subject}
+PROJECT TITLE: [generate]
+Name of Learner: {name}
+Name of School: {school}
+Candidate Number: {cand_no}
+Centre Number: {centre_no}
+Teacher: [Leave blank]
+SYLLABUS TOPIC: [based on subject+grade]
+SUB TOPIC: [based on problem]
+Year: 2026
+Level: {level}
+PROJECT OBJECTIVES
+[5 objectives]
+
+6 STAGES EXACT STRUCTURE:
+
+STAGE 1: PROBLEM IDENTIFICATION
+1. Problem Identification (short paragraph like: Littering has become a problem at Beverly Hills College...)
+2. Problem Description (brief situation)
+3. Statement of Intent (I intend to develop...)
+4. Objectives (5 objectives)
+5. Design Specifications (10 bullet points - simple, affordable, local materials, safe, etc)
+
+STAGE 2: INVESTIGATION OF RELATED IDEAS
+At least 4 existing solutions. For each: Where used, How it works, Strengths/Weaknesses. 
+ADD: 📸 FIND PICTURES: Find photos of how others solved it. Or use this AI prompt: "Create a school poster showing [solution] for {subject} project about [problem]"
+
+STAGE 3: GENERATION OF IDEAS
+3-4 solutions developed from Stage 2 (Adopted, Modified, Innovative). Strengths/weaknesses. Drawings/diagrams needed - give prompts.
+
+STAGE 4: DEVELOPMENT OF SELECTED IDEA
+Select best solution + why. Materials list. Construction process. 
+ADD: Ask "Can you access these resources? If not, I will give easier alternative (campaign/poster)."
+ADD: 📸 TAKE YOUR OWN PHOTO: Take picture of you making it - evidence of ownership
+
+STAGE 5: PRESENTATION OF RESULTS
+Use/Test/Demonstrate, record results, sample population (class/school)
+
+STAGE 6: EVALUATION AND RECOMMENDATIONS
+Problems encountered + how overcome. Recommendations for other possible solutions.
+
+EVIDENCE SYSTEM: In every stage where picture needed, tell learner to create own poster/photo or give ready prompt to paste to Meta AI / ChatGPT.
+"""
+
+    if problem_idea:
+        user_prompt = f"Learner suggested Problem Idea: '{problem_idea}'. First evaluate if it is ZIMSEC standard (easy to solve, product/service). If weak, explain why not good + suggest better angle in same subject. If good, use it and generate FULL 6 STAGE PROJECT with 2 versions."
+    else:
+        user_prompt = f"Learner has NO idea. Suggest 5-7 Problem Identifications BASED ON {subject} Form/Grade {grade_form} syllabus topics. Then pick best one (e.g if Geography Form 4 -> Land Pollution) and generate FULL 6 STAGE PROJECT with 2 versions."
+
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role":"system","content":system_prompt},{"role":"user","content":user_prompt}],
+        temperature=0.7,
+        max_tokens=6000
+    )
+    return response.choices[0].message.content
+
+def suggest_problems(grade_form, subject):
+    # Quick suggestion without AI if needed
+    prompt = f"Suggest 5-7 ZIMSEC project Problem Identifications for Subject {subject} Grade/Form {grade_form}. Keep them simple, campaign-based, product/service. Comply Circular 9 2024."
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role":"user","content":prompt}],
+        max_tokens=1000
+    )
+    return response.choices[0].message.content
