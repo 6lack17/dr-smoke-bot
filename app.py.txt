@@ -1,0 +1,116 @@
+from flask import Flask, request, jsonify
+import requests, os, json
+from dotenv import load_dotenv
+import zimsec
+
+load_dotenv()
+app = Flask(__name__)
+
+VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "smoke2026")
+WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
+PHONE_ID = os.getenv("PHONE_ID")
+
+USERS_FILE = "users.json"
+
+def load_users():
+    if not os.path.exists(USERS_FILE): return {}
+    with open(USERS_FILE,'r') as f: return json.load(f)
+
+def save_users(data):
+    with open(USERS_FILE,'w') as f: json.dump(data,f)
+
+def send_whatsapp(to, text):
+    url = f"https://graph.facebook.com/v20.0/{PHONE_ID}/messages"
+    headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}", "Content-Type": "application/json"}
+    data = {"messaging_product":"whatsapp","to":to,"type":"text","text":{"body":text[:4000]}}
+    requests.post(url, headers=headers, json=data)
+
+@app.route("/")
+def home(): return "DR SMOKE Solutions ONLINE - By Kelvin Bvunzawabaya"
+
+@app.route("/webhook", methods=["GET"])
+def verify():
+    if request.args.get("hub.verify_token") == VERIFY_TOKEN:
+        return request.args.get("hub.challenge")
+    return "Invalid token", 403
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    data = request.get_json()
+    try:
+        entry = data['entry'][0]['changes'][0]['value']
+        if 'messages' not in entry: return jsonify(status="ok"),200
+        msg = entry['messages'][0]
+        from_no = msg['from']
+        text = msg.get('text',{}).get('body','').strip()
+
+        users = load_users()
+        user = users.get(from_no, {"step":"new"})
+
+        if text.lower() in ["hi","hello","hey"] or user["step"]=="new":
+            send_whatsapp(from_no, "🎓 Welcome to The Project Assistant\nBy Kelvin Bvunzawabaya\nComputer Science Student @ Beverly Hills\n\nHi! I'm DR SMOKE KB Project Assistant, your ZIMSEC study partner.\n\nLet's get you set up quickly:\n\nWhat's your full name? (as for exam)")
+            user["step"]="ask_name"
+        
+        elif user["step"]=="ask_name":
+            user["name"]=text
+            send_whatsapp(from_no, f"Nice to meet you {text}! 👋\n\nName of School?")
+            user["step"]="ask_school"
+
+        elif user["step"]=="ask_school":
+            user["school"]=text
+            send_whatsapp(from_no, "Candidate Number?")
+            user["step"]="ask_candidate"
+
+        elif user["step"]=="ask_candidate":
+            user["candidate_no"]=text
+            send_whatsapp(from_no, "Centre Number?")
+            user["step"]="ask_centre"
+
+        elif user["step"]=="ask_centre":
+            user["centre_no"]=text
+            send_whatsapp(from_no, "Which Grade/Form are you in?\nReply with:\n6 - Grade 6\n7 - Grade 7\n3 - Form 3\n4 - Form 4\n5 - Form 5\n6 - Form 6\n\nExample: Just send \"4\" for Form 4")
+            user["step"]="ask_grade"
+
+        elif user["step"]=="ask_grade":
+            user["grade"]=text
+            send_whatsapp(from_no, f"Perfect! Form/Grade {text} - ZIMSEC journey! 🔥\n\nWhich subject for project?\n{', '.join(zimsec.SUBJECTS)}")
+            user["step"]="ask_subject"
+
+        elif user["step"]=="ask_subject":
+            user["subject"]=text
+            send_whatsapp(from_no, f"Great! {text} noted.\n\nDo you already have a Problem Identification / Project Idea?\nReply YES or NO")
+            user["step"]="ask_problem_exist"
+
+        elif user["step"]=="ask_problem_exist":
+            if text.lower() in ["yes","y"]:
+                send_whatsapp(from_no, "Send your Problem Identification / Idea now and I will check if it meets ZIMSEC standard and build full project.")
+                user["step"]="has_idea"
+            else:
+                send_whatsapp(from_no, "No problem! Generating 5-7 syllabus-based problem ideas for you...")
+                suggestions = zimsec.suggest_problems(user["grade"], user["subject"])
+                send_whatsapp(from_no, suggestions + "\n\nReply with number or type your chosen idea title.")
+                user["step"]="choose_suggestion"
+
+        elif user["step"] in ["has_idea","choose_suggestion"]:
+            send_whatsapp(from_no, "⏳ Generating your FULL 6-Stage ZIMSEC project... 2 Versions (Simple + Advanced) + Cover Page. Wait 30 seconds...")
+            project = zimsec.generate_project_prompt(user, problem_idea=text)
+            # Split long project into chunks
+            for i in range(0, len(project), 3500):
+                send_whatsapp(from_no, project[i:i+3500])
+            send_whatsapp(from_no, "✅ DONE! 2 Versions Generated.\n\n📸 REMEMBER EVIDENCE: Take own photos/posters as instructed in stages.\n\nNeed PDF? Reply 'PDF'\nNew project? Reply 'NEW'")
+            user["step"]="done"
+            user["last_project"]=project
+
+        elif text.lower() in ["new","new project"]:
+            user["step"]="ask_subject"
+            send_whatsapp(from_no, "Which subject for new project?")
+
+        users[from_no]=user
+        save_users(users)
+
+    except Exception as e:
+        print("Error:", e)
+    return jsonify(status="ok"),200
+
+if __name__=="__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",10000)))
